@@ -1,0 +1,332 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MINISTRY_OFFICER
+  STATE_OFFICER
+  DISTRICT_OFFICER
+  INSPECTOR
+  PUBLIC_USER
+}
+
+enum ProjectStatus {
+  ON_TRACK
+  AT_RISK
+  CRITICAL
+  COMPLETED
+}
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  DELAYED
+}
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+enum GrievanceStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+enum GrievancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+enum NotificationType {
+  PROJECT
+  ISSUE
+  GRIEVANCE
+  EVIDENCE
+  SYSTEM
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  name               String
+  email              String              @unique
+  passwordHash       String
+  role               Role                @default(PUBLIC_USER)
+  active             Boolean             @default(true)
+  ministryId         String?
+  stateId            String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  ministry           Ministry?           @relation(fields: [ministryId], references: [id])
+  state              State?              @relation(fields: [stateId], references: [id])
+  refreshTokens      RefreshToken[]
+  createdProjects    Project[]           @relation("ProjectCreator")
+  assignedIssues     Issue[]             @relation("IssueAssignee")
+  reportedIssues     Issue[]             @relation("IssueReporter")
+  uploadedEvidence   Evidence[]
+  projectUpdates     ProjectUpdate[]
+  assignedGrievances Grievance[]         @relation("GrievanceAssignee")
+  grievanceResponses GrievanceResponse[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  @@index([role, active])
+}
+
+model Ministry {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  code        String       @unique
+  departments Department[]
+  projects    Project[]
+  users       User[]
+  createdAt   DateTime     @default(now())
+}
+
+model Department {
+  id         String    @id @default(cuid())
+  name       String
+  code       String    @unique
+  ministryId String
+  ministry   Ministry  @relation(fields: [ministryId], references: [id], onDelete: Cascade)
+  schemes    Scheme[]
+  projects   Project[]
+  @@unique([ministryId, name])
+  @@index([ministryId])
+}
+
+model Scheme {
+  id           String     @id @default(cuid())
+  name         String
+  code         String     @unique
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  projects     Project[]
+  @@unique([departmentId, name])
+}
+
+model State {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  code      String     @unique
+  districts District[]
+  projects  Project[]
+  users     User[]
+}
+
+model District {
+  id      String   @id @default(cuid())
+  name    String
+  stateId String
+  state   State    @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  projects Project[]
+  @@unique([stateId, name])
+  @@index([stateId])
+}
+
+model Project {
+  id                   String        @id @default(cuid())
+  projectCode          String        @unique
+  name                 String
+  description          String
+  location             String
+  latitude             Float
+  longitude            Float
+  budget               Decimal       @db.Decimal(16, 2)
+  spentAmount          Decimal       @default(0) @db.Decimal(16, 2)
+  contractor           String?
+  startDate            DateTime
+  expectedCompletion   DateTime
+  actualCompletion     DateTime?
+  progress             Int           @default(0)
+  status               ProjectStatus @default(ON_TRACK)
+  manualStatusOverride ProjectStatus?
+  riskScore            Int           @default(0)
+  riskLevel            String        @default("LOW")
+  publicVisible        Boolean       @default(true)
+  ministryId           String
+  departmentId         String
+  schemeId             String?
+  stateId              String
+  districtId           String
+  createdById          String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  ministry             Ministry      @relation(fields: [ministryId], references: [id])
+  department           Department    @relation(fields: [departmentId], references: [id])
+  scheme               Scheme?       @relation(fields: [schemeId], references: [id])
+  state                State         @relation(fields: [stateId], references: [id])
+  district             District      @relation(fields: [districtId], references: [id])
+  createdBy            User?         @relation("ProjectCreator", fields: [createdById], references: [id])
+  milestones           Milestone[]
+  issues               Issue[]
+  evidence             Evidence[]
+  updates              ProjectUpdate[]
+  grievances           Grievance[]
+  @@index([status, stateId])
+  @@index([ministryId, departmentId])
+  @@index([projectCode])
+  @@index([name])
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  plannedDate DateTime
+  actualDate  DateTime?
+  progress    Int             @default(0)
+  status      MilestoneStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId, status])
+}
+
+model Issue {
+  id          String        @id @default(cuid())
+  projectId   String
+  title       String
+  description String
+  category    String
+  severity    IssueSeverity
+  status      IssueStatus   @default(OPEN)
+  dueDate     DateTime?
+  resolvedAt  DateTime?
+  reportedById String
+  assignedToId String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reportedBy  User          @relation("IssueReporter", fields: [reportedById], references: [id])
+  assignedTo  User?         @relation("IssueAssignee", fields: [assignedToId], references: [id])
+  evidence    Evidence[]
+  @@index([projectId, status, severity])
+}
+
+model Evidence {
+  id          String   @id @default(cuid())
+  projectId   String
+  issueId     String?
+  fileName    String
+  storedName  String
+  mimeType    String
+  size        Int
+  description String?
+  isPublic    Boolean  @default(false)
+  uploadedById String
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issue       Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  @@index([projectId, createdAt])
+}
+
+model ProjectUpdate {
+  id        String   @id @default(cuid())
+  projectId String
+  authorId  String
+  progress  Int
+  message   String
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+  @@index([projectId, createdAt])
+}
+
+model Grievance {
+  id           String            @id @default(cuid())
+  trackingId   String            @unique
+  name         String
+  email        String
+  phone        String?
+  subject      String
+  description  String
+  category     String
+  priority     GrievancePriority @default(MEDIUM)
+  status       GrievanceStatus   @default(SUBMITTED)
+  projectId    String?
+  assignedToId String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignedTo   User?             @relation("GrievanceAssignee", fields: [assignedToId], references: [id])
+  responses    GrievanceResponse[]
+  @@index([status, createdAt])
+}
+
+model GrievanceResponse {
+  id          String    @id @default(cuid())
+  grievanceId String
+  authorId    String
+  message     String
+  isPublic    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  grievance   Grievance @relation(fields: [grievanceId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, read, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([entity, entityId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}

@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { Role } from '@prisma/client';
+import { z } from 'zod';
+import { authenticate, allow } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler, ok } from '../utils/http.js';
+import { prisma } from '../utils/prisma.js';
+const router=Router();router.use(authenticate,allow(Role.SUPER_ADMIN,Role.ADMIN));
+router.get('/',validate(z.object({q:z.string().optional(),entity:z.string().optional(),page:z.coerce.number().int().positive().default(1),limit:z.coerce.number().int().min(1).max(100).default(50)}),'query'),asyncHandler(async(req,res)=>{const q=req.query as any;const where={...(q.entity?{entity:q.entity}:{}),...(q.q?{OR:[{action:{contains:q.q,mode:'insensitive' as const}},{entityId:{contains:q.q,mode:'insensitive' as const}}]}:{})};const [items,total]=await Promise.all([prisma.auditLog.findMany({where,include:{user:{select:{name:true,email:true}}},orderBy:{createdAt:'desc'},skip:(q.page-1)*q.limit,take:q.limit}),prisma.auditLog.count({where})]);ok(res,{items,pagination:{page:q.page,limit:q.limit,total,pages:Math.ceil(total/q.limit)}})}));
+export default router;

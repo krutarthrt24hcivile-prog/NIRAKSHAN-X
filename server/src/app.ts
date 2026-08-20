@@ -1,0 +1,18 @@
+import path from 'node:path';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
+import { config } from './config.js';
+import { openApiDefinition } from './openapi.js';
+import authRoutes from './routes/auth.routes.js'; import projectRoutes from './routes/project.routes.js'; import issueRoutes from './routes/issue.routes.js'; import grievanceRoutes from './routes/grievance.routes.js'; import userRoutes from './routes/user.routes.js'; import dashboardRoutes from './routes/dashboard.routes.js'; import gisRoutes from './routes/gis.routes.js'; import analyticsRoutes from './routes/analytics.routes.js'; import notificationRoutes from './routes/notification.routes.js'; import auditRoutes from './routes/audit.routes.js'; import searchRoutes from './routes/search.routes.js'; import aiRoutes from './routes/ai.routes.js'; import reportRoutes from './routes/report.routes.js';
+import { errorHandler, notFound, ok, asyncHandler } from './utils/http.js'; import { prisma } from './utils/prisma.js';
+export const app=express();
+app.set('trust proxy',1);app.use(helmet({crossOriginResourcePolicy:false}));app.use(cors({origin:config.clientUrl,credentials:true}));app.use(rateLimit({windowMs:15*60*1000,max:500,standardHeaders:'draft-8',legacyHeaders:false}));app.use(express.json({limit:'1mb'}));app.use(cookieParser());app.use(morgan(config.env==='production'?'combined':'dev'));app.use('/uploads',express.static(path.resolve(process.cwd(),config.uploadDir),{fallthrough:false}));
+const swagger=swaggerJsdoc({definition:openApiDefinition,apis:[]});app.use('/api/docs',swaggerUi.serve,swaggerUi.setup(swagger));
+app.get('/api/health',asyncHandler(async(_req,res)=>{try{await prisma.$queryRaw`SELECT 1`;ok(res,{status:'ok',database:'connected',timestamp:new Date().toISOString()});}catch{ok(res,{status:'degraded',database:'unavailable',timestamp:new Date().toISOString()},'Application available; database unavailable',503)}}));
+app.use('/api/auth',authRoutes);app.use('/api/projects',projectRoutes);app.use('/api/issues',issueRoutes);app.use('/api/grievances',grievanceRoutes);app.use('/api/users',userRoutes);app.use('/api/dashboard',dashboardRoutes);app.use('/api/gis',gisRoutes);app.use('/api/analytics',analyticsRoutes);app.use('/api/notifications',notificationRoutes);app.use('/api/audit-logs',auditRoutes);app.use('/api/search',searchRoutes);app.use('/api/ai',aiRoutes);app.use('/api/reports',reportRoutes);app.use(notFound);app.use(errorHandler);

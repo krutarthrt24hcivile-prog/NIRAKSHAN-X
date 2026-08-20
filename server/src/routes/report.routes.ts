@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import PDFDocument from 'pdfkit';
+import { z } from 'zod';
+import { authenticate, allow, officers } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { asyncHandler, ok } from '../utils/http.js';
+import { prisma } from '../utils/prisma.js';
+const router=Router();
+const filters=z.object({stateId:z.string().optional(),departmentId:z.string().optional(),status:z.enum(['ON_TRACK','AT_RISK','CRITICAL','COMPLETED']).optional(),format:z.enum(['json','csv','pdf']).default('json')});
+const reportData=async(q:any)=>prisma.project.findMany({where:{...(q.stateId?{stateId:q.stateId}:{}),...(q.departmentId?{departmentId:q.departmentId}:{}),...(q.status?{status:q.status}:{})},include:{state:{select:{name:true}},department:{select:{name:true}},ministry:{select:{name:true}}},orderBy:{updatedAt:'desc'}});
+const safe=(v:unknown)=>`"${String(v??'').replaceAll('"','""')}"`;
+router.get('/projects',authenticate,allow(...officers),validate(filters,'query'),asyncHandler(async(req,res)=>{const q=req.query as any;const projects=await reportData(q);const rows=projects.map(p=>({projectCode:p.projectCode,name:p.name,state:p.state.name,department:p.department.name,status:p.status,progress:p.progress,budget:Number(p.budget),spentAmount:Number(p.spentAmount),riskScore:p.riskScore}));if(q.format==='csv'){res.setHeader('Content-Type','text/csv');res.attachment('nirikshan-project-report.csv');return res.send([Object.keys(rows[0]??{}).join(','),...rows.map(r=>Object.values(r).map(safe).join(','))].join('\n'));}if(q.format==='pdf'){res.setHeader('Content-Type','application/pdf');res.attachment('nirikshan-project-report.pdf');const doc=new PDFDocument({margin:42});doc.pipe(res);doc.fontSize(18).fillColor('#00367a').text('NIRIKSHAN-X Project Report');doc.moveDown().fontSize(9).fillColor('#111827').text(`Generated ${new Date().toLocaleString('en-IN')}`);doc.moveDown();rows.forEach((r,i)=>{doc.fontSize(10).fillColor('#00367a').text(`${i+1}. ${r.name} (${r.projectCode})`);doc.fontSize(9).fillColor('#111827').text(`${r.state} | ${r.department} | ${r.status} | Progress: ${r.progress}% | Budget: ₹${r.budget.toLocaleString('en-IN')}`);doc.moveDown(.6);});doc.end();return;}ok(res,{generatedAt:new Date(),filters:q,projects:rows,summary:{total:rows.length,totalBudget:rows.reduce((n,r)=>n+r.budget,0),totalSpent:rows.reduce((n,r)=>n+r.spentAmount,0)}});}));
+export default router;

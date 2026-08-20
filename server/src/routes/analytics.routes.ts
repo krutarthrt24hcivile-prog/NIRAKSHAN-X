@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import { ProjectStatus } from '@prisma/client';
+import { prisma } from '../utils/prisma.js';
+import { asyncHandler, ok } from '../utils/http.js';
+import { authenticate } from '../middleware/auth.js';
+const router = Router(); router.use(authenticate);
+router.get('/status', asyncHandler(async (_req,res)=>ok(res, await prisma.project.groupBy({by:['status'],_count:{_all:true},_avg:{progress:true}}))));
+router.get('/states', asyncHandler(async (_req,res)=>ok(res, await prisma.project.groupBy({by:['stateId'],_count:{_all:true},_avg:{progress:true},orderBy:{_count:{stateId:'desc'}},take:20}).then(async groups=>Promise.all(groups.map(async g=>({...g,state:await prisma.state.findUnique({where:{id:g.stateId},select:{name:true}})})))))));
+router.get('/departments', asyncHandler(async (_req,res)=>ok(res, await prisma.project.groupBy({by:['departmentId'],_count:{_all:true},_avg:{progress:true},orderBy:{_count:{departmentId:'desc'}},take:20}).then(async groups=>Promise.all(groups.map(async g=>({...g,department:await prisma.department.findUnique({where:{id:g.departmentId},select:{name:true}})})))))));
+router.get('/budget', asyncHandler(async (_req,res)=>ok(res, await prisma.project.aggregate({_sum:{budget:true,spentAmount:true},_avg:{progress:true}}))));
+router.get('/progress', asyncHandler(async (_req,res)=>ok(res, await prisma.project.groupBy({by:['status'],_avg:{progress:true},_count:{_all:true}}))));
+router.get('/risk', asyncHandler(async (_req,res)=>ok(res, await prisma.project.groupBy({by:['riskLevel'],_count:{_all:true},_avg:{riskScore:true}}))));
+router.get('/delays', asyncHandler(async (_req,res)=>ok(res, { atRisk: await prisma.project.count({where:{status:ProjectStatus.AT_RISK}}), critical: await prisma.project.count({where:{status:ProjectStatus.CRITICAL}}), delayedMilestones: await prisma.milestone.count({where:{status:'DELAYED'}}) })));
+export default router;

@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nirikshan_x
+      POSTGRES_USER: nirikshan
+      POSTGRES_PASSWORD: nirikshan
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nirikshan -d nirikshan_x"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  server:
+    build: ./server
+    command: sh -c "npx prisma db push && npm run prisma:seed && npm run start"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nirikshan:nirikshan@db:5432/nirikshan_x?schema=public
+      CLIENT_URL: http://localhost:8080
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads_data:/app/uploads
+  client:
+    build: ./client
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+volumes:
+  postgres_data:
+  uploads_data:
